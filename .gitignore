@@ -1,0 +1,26 @@
+# Dot-folders (all ignored, including .github, .specify, .vscode)
+.*
+!.gitignore
+
+# Specs / planning artifacts
+specs/
+
+# Setup-generated / runtime files
+config/open-webui.env
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.env
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,69 @@
+services:
+  setup:
+    build:
+      context: ./setup
+      dockerfile: Dockerfile
+    container_name: llm-workspace-setup
+    ports:
+      - "${SETUP_PORT:-3000}:8000"
+    volumes:
+      - setup-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config:/config
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_BASE_URL=http://open-webui:8080
+      - OPEN_WEBUI_HOST_URL=http://localhost:${WEBUI_PORT:-8080}
+      - DATA_DIR=/data
+      - WEBUI_CONTAINER_NAME=llm-workspace-webui
+      - SETUP_PORT=${SETUP_PORT:-3000}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      open-webui:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: llm-workspace-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: llm-workspace-webui
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - webui-data:/app/backend/data
+    env_file:
+      - ./config/open-webui.env
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  setup-data:
+  ollama-data:
+  webui-data:

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Setup — Step 3: Open WebUI Configuration{% endblock %}
+{% block content %}
+
+<!-- Progress bar -->
+<div class="mb-8">
+  <div class="flex items-center justify-between mb-2 text-sm font-medium text-gray-500">
+    <span class="text-green-600 font-semibold">✓ Ollama Config</span>
+    <span class="text-green-600 font-semibold">✓ Models</span>
+    <span class="text-brand-500 font-semibold">3. Access</span>
+    <span>4. Review</span>
+  </div>
+  <div class="w-full bg-gray-200 rounded-full h-1.5">
+    <div class="bg-brand-500 h-1.5 rounded-full" style="width: 75%"></div>
+  </div>
+</div>
+
+<h1 class="text-2xl font-bold mb-1">Open WebUI Access Configuration</h1>
+<p class="text-gray-500 mb-8">Choose how users will access the AI workspace.</p>
+
+<form id="step3Form" class="space-y-6">
+  <div class="space-y-3">
+
+    {% for mode, label, desc in [
+      ('public', 'Public Access', 'No authentication required. Anyone on the network can use Open WebUI immediately.'),
+      ('login_required', 'Login Required', 'Users must log in. An admin account is created on first access. No self-registration.'),
+      ('registration_enabled', 'Login Required + Registration', 'Users must log in. New users can self-register an account.')
+    ] %}
+    <label class="flex cursor-pointer rounded-lg border p-4 gap-4 transition-colors
+                  {% if loop.index == 2 %}border-brand-500 bg-brand-50{% else %}border-gray-200 bg-white hover:border-brand-300{% endif %}"
+           id="mode-card-{{ mode }}">
+      <input type="radio" name="access_mode" value="{{ mode }}"
+             {% if loop.index == 2 %}checked{% endif %}
+             class="mt-0.5 accent-brand-500" onchange="selectMode('{{ mode }}')">
+      <div>
+        <span class="block text-sm font-semibold text-gray-900">{{ label }}</span>
+        <span class="block text-xs text-gray-500 mt-0.5">{{ desc }}</span>
+      </div>
+    </label>
+    {% endfor %}
+
+  </div>
+
+  <div id="errorMsg" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm"></div>
+
+  <button type="submit"
+          class="w-full sm:w-auto px-8 py-2.5 bg-brand-500 hover:bg-brand-700 text-white font-semibold rounded-lg transition-colors">
+    Next →
+  </button>
+</form>
+
+<script>
+  const modes = ['public', 'login_required', 'registration_enabled'];
+  function selectMode(value) {
+    modes.forEach(m => {
+      const card = document.getElementById('mode-card-' + m);
+      if (m === value) {
+        card.classList.add('border-brand-500','bg-brand-50');
+        card.classList.remove('border-gray-200','bg-white');
+      } else {
+        card.classList.remove('border-brand-500','bg-brand-50');
+        card.classList.add('border-gray-200','bg-white');
+      }
+    });
+  }
+
+  document.getElementById('step3Form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const err = document.getElementById('errorMsg');
+    err.classList.add('hidden');
+    const access_mode = document.querySelector('input[name=access_mode]:checked').value;
+    try {
+      const res = await fetch('/api/setup/webui-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ access_mode }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Error'); }
+      window.location.href = '/setup';
+    } catch (ex) {
+      err.textContent = ex.message; err.classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'Next →';
+    }
+  });
+</script>
+{% endblock %}

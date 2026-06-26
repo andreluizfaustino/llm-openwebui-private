@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Setup — Step 2: Model Installation{% endblock %}
+{% block content %}
+
+<!-- Progress bar -->
+<div class="mb-8">
+  <div class="flex items-center justify-between mb-2 text-sm font-medium text-gray-500">
+    <span class="text-green-600 font-semibold">✓ Ollama Config</span>
+    <span class="text-brand-500 font-semibold">2. Models</span>
+    <span>3. Access</span>
+    <span>4. Review</span>
+  </div>
+  <div class="w-full bg-gray-200 rounded-full h-1.5">
+    <div class="bg-brand-500 h-1.5 rounded-full" style="width: 50%"></div>
+  </div>
+</div>
+
+<h1 class="text-2xl font-bold mb-1">Model Selection & Installation</h1>
+<p class="text-gray-500 mb-6">Select one or more models to install. Downloads happen automatically.</p>
+
+<div id="modelGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+  <div class="col-span-full text-center py-8 text-gray-400">Loading models…</div>
+</div>
+
+<!-- Progress section (hidden until install starts) -->
+<div id="progressSection" class="hidden mb-6 space-y-3">
+  <h2 class="text-sm font-semibold text-gray-700">Download Progress</h2>
+  <div id="progressList" class="space-y-2"></div>
+</div>
+
+<div id="errorMsg" class="hidden rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm mb-4"></div>
+
+<div class="flex gap-3">
+  <button id="installBtn" onclick="startInstall()" disabled
+          class="px-8 py-2.5 bg-brand-500 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors">
+    Install Selected Models
+  </button>
+  <button id="nextBtn" onclick="confirmStep2()" disabled
+          class="px-8 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors">
+    Next →
+  </button>
+</div>
+
+<script>
+  const compatBadge = { recommended: 'bg-green-100 text-green-700', compatible: 'bg-blue-100 text-blue-700', not_recommended: 'bg-yellow-100 text-yellow-700' };
+  const compatLabel = { recommended: 'Recommended', compatible: 'Compatible', not_recommended: 'Not Recommended' };
+  let selected = new Set();
+  let allInstalled = new Set();
+  let models = [];
+
+  async function loadModels() {
+    const res = await fetch('/api/setup/models');
+    const data = await res.json();
+    models = data.models;
+    allInstalled = new Set(models.filter(m => m.installed).map(m => m.tag));
+    renderGrid();
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('modelGrid');
+    grid.innerHTML = models.map(m => `
+      <label class="relative flex cursor-pointer rounded-lg border p-4 gap-3 transition-colors
+                    ${selected.has(m.tag) ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:border-brand-300'}"
+             id="card-${m.tag.replace(':','-')}">
+        <input type="checkbox" class="mt-0.5 accent-brand-500" value="${m.tag}"
+               ${allInstalled.has(m.tag) ? 'checked disabled' : (selected.has(m.tag) ? 'checked' : '')}
+               onchange="toggleModel('${m.tag}', this.checked)">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-sm text-gray-900">${m.name}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded font-medium ${compatBadge[m.compatibility]}">${compatLabel[m.compatibility]}</span>
+            ${allInstalled.has(m.tag) ? '<span class="text-xs px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700">Installed</span>' : ''}
+          </div>
+          <p class="text-xs text-gray-500 mt-1">${m.description}</p>
+          <p class="text-xs text-gray-400 mt-0.5">${m.size_gb} GB · ${m.hardware_recommendation}</p>
+        </div>
+      </label>`).join('');
+    updateInstallBtn();
+  }
+
+  function toggleModel(tag, checked) {
+    if (allInstalled.has(tag)) return;
+    checked ? selected.add(tag) : selected.delete(tag);
+    const card = document.getElementById('card-' + tag.replace(':','-'));
+    if (card) {
+      card.classList.toggle('border-brand-500', checked);
+      card.classList.toggle('bg-brand-50', checked);
+      card.classList.toggle('border-gray-200', !checked);
+      card.classList.toggle('bg-white', !checked);
+    }
+    updateInstallBtn();
+  }
+
+  function updateInstallBtn() {
+    const pendingSelected = [...selected].filter(t => !allInstalled.has(t));
+    document.getElementById('installBtn').disabled = pendingSelected.length === 0;
+    // Next is only enabled when at least one model is installed
+    // AND all currently selected (but not pre-installed) models are done
+    const hasInstalled = allInstalled.size > 0;
+    const pendingStillDownloading = [...selected].some(t => !allInstalled.has(t));
+    document.getElementById('nextBtn').disabled = !hasInstalled || pendingStillDownloading;
+  }
+
+  async function confirmStep2() {
+    const res = await fetch('/api/setup/step2/confirm', { method: 'POST' });
+    if (res.ok) {
+      window.location.href = '/setup';
+    } else {
+      const err = await res.json();
+      const msg = document.getElementById('errorMsg');
+      msg.textContent = err.detail || 'Could not advance. Please install at least one model.';
+      msg.classList.remove('hidden');
+    }
+  }
+
+  async function startInstall() {
+    const tags = [...selected].filter(t => !allInstalled.has(t));
+    if (!tags.length) return;
+    document.getElementById('installBtn').disabled = true;
+    document.getElementById('errorMsg').classList.add('hidden');
+    document.getElementById('progressSection').classList.remove('hidden');
+
+    const list = document.getElementById('progressList');
+    tags.forEach(tag => {
+      list.insertAdjacentHTML('beforeend', `
+        <div id="prog-${tag.replace(':','-')}" class="bg-white border border-gray-200 rounded-lg p-3">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-sm font-medium text-gray-700">${tag}</span>
+            <span id="prog-status-${tag.replace(':','-')}" class="text-xs text-gray-400">Starting…</span>
+          </div>
+          <div class="w-full bg-gray-100 rounded-full h-1.5">
+            <div id="prog-bar-${tag.replace(':','-')}" class="bg-brand-500 h-1.5 rounded-full transition-all" style="width:0%"></div>
+          </div>
+          <button id="retry-${tag.replace(':','-')}" onclick="retryModel('${tag}')"
+                  class="hidden mt-2 text-xs text-red-600 hover:underline">Retry</button>
+        </div>`);
+    });
+
+    await fetch('/api/setup/models/install', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ models: tags }),
+    });
+
+    const evtSource = new EventSource('/api/setup/models/progress');
+    evtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.event === 'complete') { evtSource.close(); updateInstallBtn(); return; }
+      const id = data.tag.replace(':','-');
+      const bar = document.getElementById('prog-bar-' + id);
+      const statusEl = document.getElementById('prog-status-' + id);
+      const retryBtn = document.getElementById('retry-' + id);
+      if (data.status === 'installed') {
+        if (bar) bar.style.width = '100%';
+        if (statusEl) { statusEl.textContent = '✓ Installed'; statusEl.classList.add('text-green-600'); }
+        allInstalled.add(data.tag);
+        updateInstallBtn();
+      } else if (data.status === 'failed') {
+        if (statusEl) { statusEl.textContent = '✗ Failed'; statusEl.classList.add('text-red-600'); }
+        if (retryBtn) retryBtn.classList.remove('hidden');
+      } else if (data.total_bytes > 0) {
+        const pct = Math.round((data.progress_bytes / data.total_bytes) * 100);
+        if (bar) bar.style.width = pct + '%';
+        if (statusEl) statusEl.textContent = pct + '%';
+      }
+    };
+  }
+
+  async function retryModel(tag) {
+    const id = tag.replace(':','-');
+    document.getElementById('retry-' + id).classList.add('hidden');
+    document.getElementById('prog-status-' + id).textContent = 'Retrying…';
+    await fetch('/api/setup/models/retry', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tag }),
+    });
+    const evtSource = new EventSource('/api/setup/models/progress');
+    evtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.event === 'complete' || (data.tag && data.tag !== tag)) return;
+      if (data.status === 'installed') { allInstalled.add(tag); updateInstallBtn(); evtSource.close(); }
+      if (data.status === 'failed') { document.getElementById('retry-' + id).classList.remove('hidden'); evtSource.close(); }
+    };
+  }
+
+  loadModels();
+</script>
+{% endblock %}
